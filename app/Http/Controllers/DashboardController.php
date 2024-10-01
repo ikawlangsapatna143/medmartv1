@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\ProductBatch;
+use App\Models\SaleDetail;
 use App\Models\Sale;
 use App\Models\Inventory;
 use Illuminate\Http\Request;
@@ -87,6 +88,27 @@ class DashboardController extends Controller
         $totalSalesToday = Sale::whereDate('created_at', Carbon::today())
             ->sum('total_amount');
 
+            $fastMovingProducts = SaleDetail::select('product_id', DB::raw('SUM(quantity) as total_quantity'))
+            ->whereHas('sales', function ($query) use ($startDate, $endDate) {
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            })
+            ->groupBy('product_id')
+            ->orderBy('total_quantity', 'desc')
+            ->limit(10)
+            ->with('product') // Load product details
+            ->get()
+            ->map(function ($saleDetail) {
+                $product = $saleDetail->product; 
+                return [
+                    'product_id' => $product->id,
+                    'product_name' => $product->product_name,
+                    'generic_name' => $product->generic_name,
+                    'category' => $product->category,
+                    'total_quantity' => $saleDetail->total_quantity,
+                    'price' => $product->price,
+                ];
+            });
+
         if ($inventoryType === 'highest') {
             $inventories = Inventory::select('batch_id', DB::raw('MAX(quantity) as quantity'))
                 ->join('product_batches', 'inventories.batch_id', '=', 'product_batches.id')
@@ -132,6 +154,7 @@ class DashboardController extends Controller
             'currentPeriod' => $period,
             'currentInventoryType' => $inventoryType,
             'inventoryBatches' => $inventoryBatches,
+            'fastMovingProducts' => $fastMovingProducts,
         ]);
     }
 }
